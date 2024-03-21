@@ -4,8 +4,7 @@ from scipy.optimize import minimize_scalar
 from sklearn.utils import resample
 
 
-
-def computeBiasedSurrogate(x_train, y_train, sample_y, betal, betau, tol, tau, mode=True):
+def computeBiasedSurrogate(x_train, y_train, sample_y, betal, betau, tol, tau, nboot, niter, fitFunc, evalFunc, mode=True):
     """Summary or Description of the Function
 
     Parameters:
@@ -16,7 +15,12 @@ def computeBiasedSurrogate(x_train, y_train, sample_y, betal, betau, tol, tau, m
     betau (float): upper bound for bias
     tol (float): Tolerance for the bisection algorithm
     tau (float): Probability threshold, between 0 and 1
+    nboot (int): number of bootstrap replications
+    niter (int): max number of bisection iterations
+    fitFunc (callable): function to fit a surrogate, with signature (x,y,bias,iteration) -> surrogate
+    evalFunc (callable): function to evaluate a surrogate, with signature (f,x) -> evaluations
     mode (bool): Using bootstrap (True, default) or Chernoff bound (False)
+
 
     Returns:
     biased_gp: Biased GP surrogate
@@ -28,23 +32,27 @@ def computeBiasedSurrogate(x_train, y_train, sample_y, betal, betau, tol, tau, m
     n = 0
     M_test = np.size(x_train.flatten())
 
-    while err > tol and n<=25:
+    while err > tol and n<=niter:
 
-        # Fit biased GPR
-        sig = 0.1
-        gp_g_b = GPy.models.GPRegression(x_train, y_train.reshape(-1, 1)+beta_eps, noise_var=sig)
+        # # Fit biased GPR
+        # sig = 0.1
+        # gp_g_b = GPy.models.GPRegression(x_train, y_train.reshape(-1, 1)+beta_eps, noise_var=sig)
 
-        gp_g_b.constrain_positive('')
-        gp_g_b.optimize_restarts(5, verbose=False)
-        print(f"Iteration {n} : fit done")
+        # gp_g_b.constrain_positive('')
+        # gp_g_b.optimize_restarts(5, verbose=False)
+        # print(f"Iteration {n} : fit done")
+        gp_g_b = fitFunc(x_train,y_train,beta_eps,n)
 
         # Generate S sample from training data
-        fhat = gp_g_b.predict(x_train.reshape((M_test,1)),include_likelihood=True)[0].reshape((M_test,1))
-        randix = np.random.randint(0,25,size=M_test)
+        #fhat = gp_g_b.predict(x_train.reshape((M_test,1)),include_likelihood=True)[0].reshape((M_test,1))
+        ninactive = sample_y.shape[0]
+        fhat = evalFunc(gp_g_b,x_train)
+        randix = np.random.randint(0,ninactive,size=M_test)
+        # print(randix)
+        # print(sample_y[randix,:].diagonal().flatten() - y_train.flatten())
         Sk = fhat.flatten() - sample_y[randix,:].diagonal().flatten()
         avgSk = np.mean(Sk)
 
-        nboot = 5000
         avg = np.zeros(nboot)
         var = np.zeros(nboot)
         if mode: # bootstraping only
@@ -104,3 +112,40 @@ def computeBiasedSurrogate(x_train, y_train, sample_y, betal, betau, tol, tau, m
             print(f"Bias is small relative to function average. Target probability might be lower than the no-bias conservativeness.")
 
     return gp_g_b, beta_previous
+
+
+def computeBiasedGPSurrogate(x_train, y_train, sample_y, betal, betau, tol, tau, nboot, niter, mode=True):
+
+    def fitting(x,y,bias,it):
+        # Fit biased GPR
+        sig = 0.1
+        gp_g_b = GPy.models.GPRegression(x, y.reshape(-1, 1)+bias, noise_var=sig)
+
+        gp_g_b.constrain_positive('')
+        gp_g_b.optimize_restarts(5, verbose=False)
+        print(f"Iteration {it} : fit done")
+        return gp_g_b
+    
+    def evaluate(f,x):
+        M = np.shape(x_train.flatten())[0]
+        return f.predict(x_train.reshape((M,1)),include_likelihood=True)[0].reshape((M,1))
+
+    
+    return computeBiasedSurrogate(x_train,y_train,sample_y,betal,betau,tol,tau,nboot,niter,fitting,evaluate,mode)
+
+
+
+
+def computeBiasedPolySurrogate(x_train, y_train, sample_y, deg, betal, betau, tol, tau, nboot, niter, mode=True):
+    
+    def fitting(x,y,bias,it):
+        # Fitting biased polynomial
+        coeffb = np.polyfit(x.flatten(),y+bias,deg)
+        pb = lambda z : np.polyval(coeffb,z) 
+        print(f"Iteration {it} : fit done")
+        return pb
+    
+    def evaluate(f,x):
+        return f(x.flatten())
+    
+    return computeBiasedSurrogate(x_train,y_train,sample_y,betal,betau,tol,tau,nboot,niter,fitting,evaluate,mode)
