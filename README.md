@@ -5,4 +5,4 @@ This repository contains a basic implementation of the conservative active subsp
 
 The first notebook contains a simple synthetic example to study the feasible regions of the exact problem and of the approximate problem. The second notebook contains an application of the method to a thermal design problem.
 
-This code is related to the paper **Conservative Surrogate Models for Optimization using the Active Subspace Method** (preprint out soon).
+This code is related to the paper **Conservative Surrogate Models for Optimization using the Active Subspace Method** ([preprint](https://www.researchgate.net/publication/379153025_Conservative_Surrogate_Models_for_Optimization_with_the_Active_Subspace_Method)).
